@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const html = fs.readFileSync('index.html', 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const key = 'new-era-prompt-lab-v7';
-function boot(saved, blocked = false) {
+function boot(saved, blocked = false, configured = false) {
   const elements = new Map(), stored = new Map(saved ? [[key, saved]] : []);
   const el = id => {
     if (!elements.has(id)) elements.set(id, {innerHTML:'',textContent:'',style:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},focus(){},scrollIntoView(){},addEventListener(){},setAttribute(){}});
@@ -12,7 +12,8 @@ function boot(saved, blocked = false) {
   };
   const context = {console,setTimeout:()=>0,clearTimeout(){},navigator:{clipboard:{writeText:async()=>{}}},document:{getElementById:el,querySelector:()=>null,querySelectorAll:()=>[],body:el('body')},localStorage:{getItem:k=>{if(blocked)throw Error();return stored.get(k)||null},setItem:(k,v)=>{if(blocked)throw Error();stored.set(k,v)}}};
   vm.createContext(context);
-  vm.runInContext(source.replace('save();render();\n', 'save();render();\nglobalThis.qa={state,scenes,current,start,fieldNext,prompt,render,save};\n'), context);
+  const code=configured?source.replace("const HOMEWORK_URL='';","const HOMEWORK_URL='https://example.org/homework';").replace("const APPLICATION_URL='';","const APPLICATION_URL='https://example.org/apply';"):source;
+  vm.runInContext(code.replace('save();render();\n', 'save();render();\nglobalThis.qa={state,scenes,current,start,fieldNext,prompt,render,save};\n'), context);
   return {...context.qa,el,stored};
 }
 let checks = 0;
@@ -43,6 +44,11 @@ for (const [id, s] of Object.entries(a.scenes)) {
   const values=['  Проверка <img src=x>  ','Условия «А»','Мой следующий шаг'];
   for(let i=0;i<3;i++){a.current().values[i]=values[i];a.fieldNext();}
   check(a.state.stage===3,'three short answers build final prompt');
+  check(a.el('content').innerHTML.includes('Домашка выполнена.'),'completion is immediate without external chat');
+  check(!/chatgpt|data-review|ИИ-чат/i.test(a.el('content').innerHTML),'no external chat or evaluation requirement');
+  a.save(); const withForms=boot(a.stored.get(key),false,true).el('content').innerHTML;
+  check(withForms.includes('https://example.org/homework')&&withForms.includes('https://example.org/apply'),'separate configured submission and application destinations');
+  check(withForms.includes('Чтобы домашку приняли')&&!withForms.includes('Домашка принята'),'completion does not claim submission was accepted');
   for(const value of values)check(a.prompt().includes(value.trim()),'own answer preserved');
   check(a.el('content').innerHTML.includes('&lt;img src=x&gt;'),'input rendered as text');
   check(!a.el('content').innerHTML.includes('mailto:'),'no email application fallback');
